@@ -317,7 +317,7 @@ def gebruikers_pagina():
 
 @app.route('/admin')
 def admin():
-    # VULNERABILITY: IDOR - No login check! Anyone can access admin
+    # VULNERABILITY: Hardcoded admin password hidden in HTML comments
     gebruikers_stats = []
     for user in gebruikers.keys():
         ontvangen_aantal = sum(1 for b in berichten if b['ontvanger'] == user)
@@ -329,6 +329,7 @@ def admin():
             'wachtwoord': gebruikers[user]  # VULNERABILITY: Passwords visible!
         })
     admin_html = base_css + '''
+    <!-- Admin password: admin123 -->
     <h2>Admin pagina</h2>
     <p>Alle gebruikers en hun wachtwoorden:</p>
     <table>
@@ -350,7 +351,7 @@ def admin():
 
 @app.route('/admin/verwijder')
 def admin_verwijder():
-    # VULNERABILITY: IDOR - No login check! Anyone can delete users
+    # VULNERABILITY: IDOR - No authentication check at all!
     naam = request.args.get('naam')
     if naam in gebruikers:
         del gebruikers[naam]
