@@ -3,7 +3,9 @@ import urllib.parse
 import re
 
 app = Flask(__name__)
-gebruikers = []
+
+# Store users with passwords in plaintext
+gebruikers = {}  # {username: password}
 berichten = []
 
 base_css = '''
@@ -25,7 +27,7 @@ base_css = '''
     max-width: 400px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.1);
   }
-  input[type="text"], select, textarea, input[type="submit"] {
+  input[type="text"], input[type="password"], select, textarea, input[type="submit"] {
     padding: 0.5rem;
     margin-top: 0.5rem;
     width: 100%;
@@ -84,6 +86,13 @@ base_css = '''
   th {
     background-color: #eee;
   }
+  .error {
+    color: red;
+    background: #ffe6e6;
+    padding: 0.5rem;
+    border-radius: 0.4rem;
+    margin-bottom: 1rem;
+  }
 </style>
 '''
 
@@ -95,17 +104,37 @@ def filter_verboden_woorden(tekst):
     patroon = re.compile('|'.join(re.escape(w) for w in verboden_woorden), re.IGNORECASE)
     return patroon.sub(vervang, tekst)
 
+login_html = base_css + '''
+<h2>Inloggen</h2>
+<form action="/login" method="post">
+  <label>Gebruikersnaam:</label>
+  <input type="text" name="naam" required>
+  <label>Wachtwoord:</label>
+  <input type="password" name="wachtwoord" required>
+  <input type="submit" value="Inloggen">
+</form>
+<p>Nog geen account? <a href="/registreer">Registreer hier</a></p>
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+'''
+
 registreer_html = base_css + '''
 <h2>Registreer</h2>
 <form action="/registreer" method="post">
   <label>Gebruikersnaam:</label>
   <input type="text" name="naam" required>
+  <label>Wachtwoord:</label>
+  <input type="password" name="wachtwoord" required>
   <input type="submit" value="Registreer">
 </form>
+<p>Heb je al een account? <a href="/login">Inloggen</a></p>
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
 '''
 
 berichten_html = base_css + '''
-<a href="/gebruikers?gebruiker={{ gebruiker }}">Alle gebruikers</a>
 <h2>Berichten voor {{ gebruiker }}</h2>
 
 <h3>Ontvangen berichten</h3>
@@ -114,7 +143,7 @@ berichten_html = base_css + '''
     <li>
       <strong>Van:</strong> {{ b['verzender'] }}<br>
       {{ b['inhoud'] | e }}<br>
-      <a href="/nieuwbericht?verzender={{ gebruiker }}&ontvanger={{ b['verzender'] }}&quote_verzender={{ b['verzender'] | url_encode }}&quote_inhoud={{ b['inhoud'] | url_encode }}">Antwoord</a>
+      <a href="/nieuwbericht?verzender={{ b['verzender'] }}&ontvanger={{ gebruiker }}&quote_verzender={{ b['verzender'] | url_encode }}&quote_inhoud={{ b['inhoud'] | url_encode }}">Antwoord</a>
       <a href="/verwijder_bericht?gebruiker={{ gebruiker }}&index={{ loop.index0 }}" class="verwijder">Verwijder</a>
     </li>
   {% else %}
@@ -135,6 +164,7 @@ berichten_html = base_css + '''
 </ul>
 
 <a href="/nieuwbericht?verzender={{ gebruiker }}">Nieuw bericht schrijven</a>
+<a href="/gebruikers?gebruiker={{ gebruiker }}">Alle gebruikers</a>
 '''
 
 nieuwbericht_html = base_css + '''
@@ -171,7 +201,24 @@ def url_encode_filter(s):
 
 @app.route('/')
 def home():
-    return redirect(url_for('registreer_get'))
+    return redirect(url_for('login_get'))
+
+@app.route('/login', methods=['GET'])
+def login_get():
+    return render_template_string(login_html)
+
+@app.route('/login', methods=['POST'])
+def login_post():
+    naam = request.form.get('naam', '').strip()
+    wachtwoord = request.form.get('wachtwoord', '')
+    
+    if naam not in gebruikers:
+        return render_template_string(login_html, error="Gebruiker niet gevonden.")
+    
+    if gebruikers[naam] != wachtwoord:
+        return render_template_string(login_html, error="Wachtwoord incorrect.")
+    
+    return redirect(url_for('berichten_pagina', gebruiker=naam))
 
 @app.route('/registreer', methods=['GET'])
 def registreer_get():
@@ -180,95 +227,116 @@ def registreer_get():
 @app.route('/registreer', methods=['POST'])
 def registreer_post():
     naam = request.form.get('naam', '').strip()
-    if not naam or naam in gebruikers:
-        return "Gebruikersnaam ongeldig of al in gebruik."
+    wachtwoord = request.form.get('wachtwoord', '')
+    
+    if not naam:
+        return render_template_string(registreer_html, error="Gebruikersnaam mag niet leeg zijn.")
+    
+    if naam in gebruikers:
+        return render_template_string(registreer_html, error="Gebruikersnaam al in gebruik.")
+    
     if any(re.search(r'\b' + re.escape(w) + r'\b', naam, re.IGNORECASE) for w in verboden_woorden):
-        return "Deze gebruikersnaam is niet toegestaan vanwege ongepaste woorden."
-    gebruikers.append(naam)
-    return redirect(f"/berichten?gebruiker={naam}")
+        return render_template_string(registreer_html, error="Deze gebruikersnaam is niet toegestaan vanwege ongepaste woorden.")
+    
+    # Store password in plaintext
+    gebruikers[naam] = wachtwoord
+    
+    return redirect(url_for('berichten_pagina', gebruiker=naam))
 
 @app.route('/berichten')
 def berichten_pagina():
+    # VULNERABILITY: IDOR - Takes gebruiker from URL parameter without verification
     gebruiker = request.args.get('gebruiker')
-    if gebruiker in gebruikers:
-        ontvangen = [b for b in berichten if b['ontvanger'] == gebruiker]
-        verzonden = [b for b in berichten if b['verzender'] == gebruiker]
-        return render_template_string(berichten_html, gebruiker=gebruiker, ontvangen=ontvangen, verzonden=verzonden)
-    return "Ongeldige gebruiker."
+    if not gebruiker or gebruiker not in gebruikers:
+        return "Ongeldige gebruiker."
+    
+    ontvangen = [b for b in berichten if b['ontvanger'] == gebruiker]
+    verzonden = [b for b in berichten if b['verzender'] == gebruiker]
+    return render_template_string(berichten_html, gebruiker=gebruiker, ontvangen=ontvangen, verzonden=verzonden)
 
 @app.route('/nieuwbericht', methods=['GET', 'POST'])
 def nieuw_bericht():
     if request.method == 'GET':
-        verzender = request.args.get('verzender')
+        verzender = request.args.get('verzender', '')
         ontvanger = request.args.get('ontvanger', '')
         quote_verzender = request.args.get('quote_verzender', '')
         quote_inhoud = request.args.get('quote_inhoud', '')
 
-        if verzender in gebruikers:
-            voorafgaande_tekst = ''
-            if quote_verzender and quote_inhoud:
-                voorafgaande_tekst = f"[quote van {quote_verzender}]\n{quote_inhoud}\n[/quote]\n\n"
-            return render_template_string(
-                nieuwbericht_html,
-                verzender=verzender,
-                ontvanger=ontvanger,
-                gebruikers=gebruikers,
-                voorafgaande_tekst=voorafgaande_tekst
-            )
-        return "Ongeldige verzender."
+        if verzender not in gebruikers:
+            return "Ongeldige verzender."
+
+        voorafgaande_tekst = ''
+        if quote_verzender and quote_inhoud:
+            voorafgaande_tekst = f"[quote van {quote_verzender}]\n{quote_inhoud}\n[/quote]\n\n"
+        
+        return render_template_string(
+            nieuwbericht_html,
+            verzender=verzender,
+            ontvanger=ontvanger,
+            gebruikers=list(gebruikers.keys()),
+            voorafgaande_tekst=voorafgaande_tekst
+        )
     else:
         verzender = request.form.get('verzender')
         ontvanger = request.form.get('ontvanger')
         inhoud = request.form.get('inhoud')
-        if verzender in gebruikers and ontvanger in gebruikers:
-            inhoud = filter_verboden_woorden(inhoud)
-            berichten.append({'verzender': verzender, 'ontvanger': ontvanger, 'inhoud': inhoud})
-            return redirect(f"/berichten?gebruiker={verzender}")
-        return "Ongeldige verzender of ontvanger."
+        
+        if verzender not in gebruikers or ontvanger not in gebruikers:
+            return "Ongeldige verzender of ontvanger."
+        
+        inhoud = filter_verboden_woorden(inhoud)
+        berichten.append({'verzender': verzender, 'ontvanger': ontvanger, 'inhoud': inhoud})
+        return redirect(url_for('berichten_pagina', gebruiker=verzender))
 
 @app.route('/verwijder_bericht')
 def verwijder_bericht():
+    # VULNERABILITY: IDOR - Takes gebruiker and index from URL without verification
     gebruiker = request.args.get('gebruiker')
     try:
         index = int(request.args.get('index'))
     except (TypeError, ValueError):
         return "Ongeldige index."
 
-    if gebruiker in gebruikers:
-        ontvangen = [b for b in berichten if b['ontvanger'] == gebruiker]
-        if 0 <= index < len(ontvangen):
-            bericht_to_delete = ontvangen[index]
-            berichten.remove(bericht_to_delete)
-            return redirect(f"/berichten?gebruiker={gebruiker}")
-        else:
-            return "Bericht niet gevonden."
-    return "Ongeldige gebruiker."
+    # No check that anyone actually has permission to delete this message
+    ontvangen = [b for b in berichten if b['ontvanger'] == gebruiker]
+    if 0 <= index < len(ontvangen):
+        bericht_to_delete = ontvangen[index]
+        berichten.remove(bericht_to_delete)
+        return redirect(url_for('berichten_pagina', gebruiker=gebruiker))
+    else:
+        return "Bericht niet gevonden."
 
 @app.route('/gebruikers')
 def gebruikers_pagina():
+    # VULNERABILITY: IDOR - Takes gebruiker parameter without verification
     huidige_gebruiker = request.args.get('gebruiker', '')
-    if huidige_gebruiker not in gebruikers:
+    if not huidige_gebruiker or huidige_gebruiker not in gebruikers:
         return "Ongeldige gebruiker."
-    return render_template_string(gebruikers_html, gebruikers=gebruikers, huidige_gebruiker=huidige_gebruiker)
+    
+    return render_template_string(gebruikers_html, gebruikers=list(gebruikers.keys()), huidige_gebruiker=huidige_gebruiker)
 
 @app.route('/admin')
 def admin():
+    # VULNERABILITY: IDOR - No login check! Anyone can access admin
     gebruikers_stats = []
-    for user in gebruikers:
+    for user in gebruikers.keys():
         ontvangen_aantal = sum(1 for b in berichten if b['ontvanger'] == user)
         verzonden_aantal = sum(1 for b in berichten if b['verzender'] == user)
         gebruikers_stats.append({
             'naam': user,
             'ontvangen': ontvangen_aantal,
-            'verzonden': verzonden_aantal
+            'verzonden': verzonden_aantal,
+            'wachtwoord': gebruikers[user]  # VULNERABILITY: Passwords visible!
         })
     admin_html = base_css + '''
     <h2>Admin pagina</h2>
+    <p>Alle gebruikers en hun wachtwoorden:</p>
     <table>
-      <tr><th>Gebruiker</th><th>Ontvangen berichten</th><th>Verzonden berichten</th><th>Acties</th></tr>
+      <tr><th>Gebruiker</th><th>Wachtwoord</th><th>Ontvangen berichten</th><th>Verzonden berichten</th><th>Acties</th></tr>
       {% for g in gebruikers_stats %}
       <tr>
         <td>{{ g.naam }}</td>
+        <td>{{ g.wachtwoord }}</td>
         <td>{{ g.ontvangen }}</td>
         <td>{{ g.verzonden }}</td>
         <td>
@@ -282,12 +350,13 @@ def admin():
 
 @app.route('/admin/verwijder')
 def admin_verwijder():
+    # VULNERABILITY: IDOR - No login check! Anyone can delete users
     naam = request.args.get('naam')
     if naam in gebruikers:
-        gebruikers.remove(naam)
+        del gebruikers[naam]
         global berichten
         berichten = [b for b in berichten if b['verzender'] != naam and b['ontvanger'] != naam]
-        return redirect('/admin')
+        return redirect(url_for('admin'))
     return "Gebruiker niet gevonden."
 
 if __name__ == '__main__':
