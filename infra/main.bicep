@@ -24,6 +24,9 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
   name: 'web-${environmentName}-${resourceToken}'
   location: location
   kind: 'app,linux'
+  tags: {
+    'azd-service-name': 'api'
+  }
   properties: {
     serverFarmId: appServicePlan.id
     siteConfig: {
