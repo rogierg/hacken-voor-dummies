@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v0.3.0/azure.yaml.json
+
+name: hacken-voor-dummies
+metadata:
+  template: azure-python-flask-free-tier
+services:
+  api:
+    project: .
+    language: py
+    host: appservice
+infra:
+  template: infra
