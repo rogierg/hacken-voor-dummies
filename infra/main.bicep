@@ -1,12 +1,19 @@
 param location string = resourceGroup().location
 param environmentName string
 param resourceGroupName string = resourceGroup().name
+param existingAppServicePlanName string = ''
+
+// Reference existing App Service Plan (if provided)
+resource existingAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' existing = if (!empty(existingAppServicePlanName)) {
+  name: existingAppServicePlanName
+}
 
 // Generate unique suffix for resources
 var resourceToken = uniqueString(resourceGroup().id)
+var appServicePlanId = !empty(existingAppServicePlanName) ? existingAppServicePlan.id : newAppServicePlan.id
 
-// App Service Plan (Free tier)
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
+// Create NEW App Service Plan only if not reusing
+resource newAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = if (empty(existingAppServicePlanName)) {
   name: 'asp-${environmentName}-${resourceToken}'
   location: location
   sku: {
@@ -28,7 +35,7 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
     'azd-service-name': 'api'
   }
   properties: {
-    serverFarmId: appServicePlan.id
+    serverFarmId: appServicePlanId
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.11'
       alwaysOn: false
@@ -62,7 +69,7 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
   }
 }
 
-output appServicePlanId string = appServicePlan.id
+output appServicePlanId string = appServicePlanId
 output webAppId string = webApp.id
 output webAppName string = webApp.name
 output webAppUri string = 'https://${webApp.properties.defaultHostName}'
