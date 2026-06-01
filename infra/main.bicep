@@ -48,6 +48,10 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
           name: 'PYTHONUNBUFFERED'
           value: '1'
         }
+        {
+          name: 'WEBSITES_PORT'
+          value: '80'
+        }
       ]
       ftpsState: 'FtpsOnly'
     }
