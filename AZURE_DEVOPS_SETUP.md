@@ -1,23 +1,61 @@
 # Azure DevOps CI/CD Setup Guide
 
-This guide shows you how to set up automatic deployment from GitHub to Azure App Service using Azure DevOps Pipelines.
+This guide shows you how to set up automatic deployment from GitHub to Azure App Service using Azure DevOps Pipelines with **Workload Identity Federation** (no secrets!).
 
 ## Prerequisites
 
-- ✅ Azure subscription with F1 App Service Plan
+- ✅ Azure subscription (free tier available)
 - ✅ Azure DevOps account (free at https://dev.azure.com)
 - ✅ GitHub repository (this repo)
-- ✅ Azure App Service already created
+- ✅ Azure CLI installed (for resource group creation)
 
-## Step 1: Create Azure DevOps Project
+## Step 1: Create Resource Group
+
+Create a dedicated resource group for this project:
+
+```bash
+# Login to Azure
+az login
+
+# Create resource group
+az group create \
+  --name rg-hacken-voor-dummies \
+  --location westeurope \
+  --tags project=hacken-voor-dummies environment=prod
+
+# Verify it was created
+az group show --name rg-hacken-voor-dummies --output table
+```
+
+## Step 2: Deploy Infrastructure
+
+Deploy your App Service to the new resource group:
+
+```bash
+# Deploy using Bicep
+az deployment group create \
+  --resource-group rg-hacken-voor-dummies \
+  --template-file infra/main.bicep \
+  --parameters environmentName=prod
+
+# Get your App Service name (save this for later)
+az webapp list \
+  --resource-group rg-hacken-voor-dummies \
+  --query "[0].name" \
+  --output tsv
+```
+
+Save the App Service name - you'll need it for pipeline variables!
+
+## Step 3: Create Azure DevOps Project
 
 1. Go to https://dev.azure.com
 2. Click **+ New Project**
 3. Name it: `hacken-voor-dummies`
-4. Set visibility: **Private** or **Public**
+4. Set visibility: **Private** (recommended) or **Public**
 5. Click **Create**
 
-## Step 2: Connect to GitHub
+## Step 4: Connect to GitHub
 
 1. In your Azure DevOps project, go to **Pipelines**
 2. Click **Create Pipeline**
@@ -26,51 +64,51 @@ This guide shows you how to set up automatic deployment from GitHub to Azure App
 5. Select your repository: `rogierg/hacken-voor-dummies`
 6. Click **Existing Azure Pipelines YAML file**
 7. Select `/azure-pipelines.yml`
-8. **DON'T RUN YET** - we need to configure variables first
+8. **DON'T RUN YET** - we need to configure the service connection first
 
-## Step 3: Create Azure Service Connection
+## Step 5: Create Service Connection with Workload Identity Federation
 
-This allows Azure DevOps to deploy to your Azure subscription.
+Create a secure connection using OIDC (no secrets needed):
 
-1. In Azure DevOps, click **Project settings** (bottom left)
-2. Go to **Service connections**
+### Create the Connection
+
+1. In Azure DevOps, click **Project settings** (bottom left gear icon)
+2. Under **Pipelines**, click **Service connections**
 3. Click **New service connection**
 4. Select **Azure Resource Manager**
 5. Click **Next**
-6. Authentication method: **Service principal (automatic)**
-7. Scope: **Subscription**
-8. Select your Azure subscription
-9. Resource group: Leave empty or select `rg-hacken-voor-dummies`
-10. Service connection name: `Azure-ServiceConnection`
-11. ✅ Check **Grant access permission to all pipelines**
+
+6. **Authentication method**: Select **Workload Identity federation (automatic)**
+   - Modern, secure option with no secrets to manage
+
+7. **Scope level**: Select **Resource Group**
+   - Limits access to only your RG
+
+8. **Subscription**: Select your Azure subscription
+
+9. **Resource group**: Select `rg-hacken-voor-dummies`
+
+10. **Service connection name**: `Azure-HackenVoorDummies-OIDC`
+
+11. **Security**: ✅ Check **Grant access permission to all pipelines**
+
 12. Click **Save**
 
-## Step 4: Get Your App Service Name
-
-You need to know the name of your existing App Service:
-
-```bash
-# List your app services
-az webapp list --query "[].{name:name, resourceGroup:resourceGroup}" --output table
-```
-
-Or go to Azure Portal → App Services and copy the name.
-
-## Step 5: Configure Pipeline Variables
+## Step 6: Configure Pipeline Variables
 
 1. In Azure DevOps, go to **Pipelines**
 2. Find your pipeline and click **Edit**
 3. Click the **Variables** button (top right)
-4. Add these variables:
+4. Click **New variable** and add these:
 
-| Variable Name | Value | Keep secret? |
-|--------------|-------|--------------|
-| `azureSubscription` | `Azure-ServiceConnection` | No |
-| `webAppName` | Your App Service name (e.g., `hacken-app-prod`) | No |
+| Variable Name | Value | Keep secret? | Notes |
+|--------------|-------|--------------|-------|
+| `azureSubscription` | `Azure-HackenVoorDummies-OIDC` | No | Must match service connection name exactly |
+| `webAppName` | Your App Service name | No | From step 2 (e.g., `app-hacken-prod-abc123`) |
 
 5. Click **Save**
 
-## Step 6: Run Your First Deployment
+## Step 7: Run Your First Deployment
 
 1. Go to **Pipelines**
 2. Click your pipeline
@@ -78,12 +116,13 @@ Or go to Azure Portal → App Services and copy the name.
 4. Click **Run**
 
 The pipeline will:
+- ✅ Authenticate using OIDC (no secrets!)
 - ✅ Build your Flask app
 - ✅ Package it as a ZIP
 - ✅ Deploy to Azure App Service
 - ✅ Configure the startup command
 
-## Step 7: Verify Deployment
+## Step 8: Verify Deployment
 
 After the pipeline succeeds:
 
@@ -94,76 +133,33 @@ After the pipeline succeeds:
 
 ## Automatic Deployments
 
-Now every time you push to the `main` branch:
-1. Azure DevOps detects the change
-2. Runs the pipeline automatically
-3. Deploys to Azure App Service
-
-## Pipeline Status Badge (Optional)
-
-Add a build status badge to your README:
-
-1. In Azure DevOps, go to **Pipelines**
-2. Click your pipeline
-3. Click **...** (three dots) → **Status badge**
-4. Copy the Markdown
-5. Paste in your README.md
+Every push to `main` triggers automatic deployment to Azure App Service.
 
 ## Troubleshooting
 
 ### Pipeline fails with "Service connection not found"
+- Verify `azureSubscription` variable matches service connection name exactly (case-sensitive)
+- Check: Project Settings → Service connections
 
-- Make sure `azureSubscription` variable matches your service connection name exactly
-- Check the service connection has permissions to your subscription
+### Pipeline fails with "Failed to obtain the Json Web Token(JWT)"
+- Verify service connection uses **Workload Identity federation**
+- Try recreating the service connection
 
-### App Service deployment fails
-
-Check that:
-- Your App Service exists
-- `webAppName` variable is set correctly
-- The service connection has permissions to the resource group
+### Deployment fails with "Forbidden" or "Unauthorized"
+- Verify service connection scope is `rg-hacken-voor-dummies`
+- Service principal should have **Contributor** role on the RG
 
 ### App doesn't start after deployment
-
-1. Go to Azure Portal → Your App Service → Log stream
-2. Look for errors
-3. Common fixes:
-   - Check `requirements.txt` includes all dependencies
-   - Verify `main.py` has the production configuration
-   - Check startup command is set: `python main.py`
-
-### View Deployment Logs
-
-```bash
-# Install Azure CLI
-az login
-
-# Stream logs
-az webapp log tail --name YOUR_APP_NAME --resource-group rg-hacken-voor-dummies
-```
+- Check Azure Portal → App Service → Log stream for errors
+- Verify `requirements.txt` includes all dependencies
+- Check startup command is set: `python main.py`
 
 ## Free Tier Limitations
 
-Your F1 App Service Plan has:
+Your F1 App Service Plan:
 - ✅ FREE (no cost)
-- ⚠️ App sleeps after 20 minutes of inactivity
-- ⚠️ First request after sleep takes 10-30 seconds (cold start)
-- ⚠️ Shared CPU resources
-- ⚠️ 1 GB storage
+- ⚠️ App sleeps after 20 minutes of inactivity (first request takes 10-30 seconds)
 - ✅ SSL/TLS included (HTTPS)
-
-## Manual Deployment (Alternative)
-
-If you prefer manual control, you can trigger deployments from:
-
-1. **Azure DevOps**: Pipelines → Run pipeline
-2. **Azure CLI**:
-   ```bash
-   az webapp deployment source config-zip \
-     --resource-group rg-hacken-voor-dummies \
-     --name YOUR_APP_NAME \
-     --src deployment.zip
-   ```
 
 ## Next Steps
 
@@ -174,14 +170,15 @@ If you prefer manual control, you can trigger deployments from:
 
 ## Clean Up
 
-To delete everything:
-
 ```bash
-# Delete resource group (removes App Service too)
+# Delete resource group
 az group delete --name rg-hacken-voor-dummies --yes
 
-# Delete Azure DevOps project
-# Go to Project Settings → Overview → Delete
+# Delete service connection in Azure DevOps
+# Project Settings → Service connections → Delete
+
+# Delete Azure DevOps project (optional)
+# Project Settings → Overview → Delete
 ```
 
 ## Quick Reference
