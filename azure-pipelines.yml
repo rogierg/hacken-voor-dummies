@@ -101,3 +101,4 @@ stages:
               package: '$(Pipeline.Workspace)/drop/app-$(Build.BuildId).zip'
               runtimeStack: 'PYTHON|3.12'
               startUpCommand: 'python main.py'
+              appSettings: '-SCM_DO_BUILD_DURING_DEPLOYMENT false'
