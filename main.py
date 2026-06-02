@@ -1,19 +1,51 @@
-from flask import Flask, request, redirect, url_for, render_template_string, jsonify, make_response
+from flask import Flask, request, redirect, url_for, render_template_string, jsonify, session
 import urllib.parse
 import re
 import random
 import time
 import threading
+from translations import get_text, get_all
 
 app = Flask(__name__)
-app.secret_key = 'hacken-voor-dummies-secret-key'
+app.secret_key = 'hacken-voor-dummies-secret-key-2024-super-geheim'
+
+# Language helper function
+def get_language():
+    """Get current language from session, default to Dutch"""
+    return session.get('language', 'nl')
+
+def t(key, **kwargs):
+    """Shorthand for translation"""
+    return get_text(key, get_language(), **kwargs)
 
 # Store users with passwords in plaintext
-gebruikers = {}  # {username: {'password': str, 'emoji': str, 'is_bot': bool}}
+gebruikers = {}  # {username: {'password': str, 'emoji': str, 'is_bot': bool, 'unlocked_emojis': list}}
 berichten = []
 
-# Beschikbare emoji's voor profielfoto's
-beschikbare_emojis = ['😀', '😎', '🤖', '👻', '🦄', '🐱', '🐶', '🦊', '🐼', '🐨', '🦁', '🐯', '🐸', '🐙', '🦋', '🌟', '⚡', '🔥', '💎', '🎮', '🎨', '🎸', '⚽', '🏀']
+# Standaard emoji's - voor iedereen beschikbaar
+standaard_emojis = ['😀', '😊', '🤖', '👻', '🐱', '🐶', '🦊', '🐼', '🐨', '🌟']
+
+# Premium emoji's - alleen met giftcard code
+premium_emojis = {
+    '👑': 'KONING2024',
+    '💎': 'DIAMANT99',
+    '🔥': 'VUURBAL',
+    '⚡': 'BLIKSEM',
+    '🦄': 'EENHOORN',
+    '🎮': 'GAMER123',
+    '🎨': 'KUNSTWERK',
+    '🎸': 'ROCKSTAR',
+    '⚽': 'VOETBAL',
+    '🏀': 'BASKET2024',
+    '🚀': 'RAKET888',
+    '🎯': 'BULLSEYE',
+    '🏆': 'KAMPIOEN',
+    '💰': 'GOUDSTUK',
+    '🌈': 'REGENBOOG'
+}
+
+# Alle beschikbare emoji's
+beschikbare_emojis = standaard_emojis + list(premium_emojis.keys())
 
 # Auto-reply antwoorden voor bots
 bot_antwoorden = {
@@ -84,28 +116,30 @@ def initialiseer_bots():
     if len(gebruikers) == 0:  # Alleen als er nog geen gebruikers zijn
         # Voeg bot gebruikers toe
         bots = {
-            'directeur': {'password': 'geheim123', 'emoji': '👔', 'is_bot': True},
-            'president': {'password': 'veilig2024', 'emoji': '🎩', 'is_bot': True},
-            'hacker': {'password': 'hunter2', 'emoji': '💻', 'is_bot': True},
-            'support': {'password': 'helpdesk', 'emoji': '🎧', 'is_bot': True},
-            'detective': {'password': 'sherlock', 'emoji': '🕵️', 'is_bot': True},
-            'robot': {'password': 'beepboop', 'emoji': '🤖', 'is_bot': True}
+            'directeur': {'password': 'geheim123', 'emoji': '👔', 'is_bot': True, 'unlocked_emojis': []},
+            'president': {'password': 'veilig2024', 'emoji': '🎩', 'is_bot': True, 'unlocked_emojis': []},
+            'hacker': {'password': 'hunter2', 'emoji': '💻', 'is_bot': True, 'unlocked_emojis': []},
+            'support': {'password': 'helpdesk', 'emoji': '🎧', 'is_bot': True, 'unlocked_emojis': []},
+            'detective': {'password': 'sherlock', 'emoji': '🕵️', 'is_bot': True, 'unlocked_emojis': []},
+            'robot': {'password': 'beepboop', 'emoji': '🤖', 'is_bot': True, 'unlocked_emojis': []}
         }
 
         gebruikers.update(bots)
 
-        # Voeg initiele berichten toe
+        # Voeg initiele berichten toe met verstopte giftcard codes!
         initiele_berichten = [
             {'verzender': 'directeur', 'ontvanger': 'president', 'inhoud': 'Goedemorgen! Zullen we volgende week vergaderen over het nieuwe beleid?'},
             {'verzender': 'president', 'ontvanger': 'directeur', 'inhoud': 'Goed idee! Ik laat mijn agenda checken.'},
-            {'verzender': 'hacker', 'ontvanger': 'support', 'inhoud': 'H3y, 1k h3b 33n bug g3v0nd3n 1n jul13 syst33m! 🐛'},
+            {'verzender': 'hacker', 'ontvanger': 'support', 'inhoud': 'H3y, 1k h3b 33n bug g3v0nd3n 1n jul13 syst33m! 🐛\n\nPS: Mijn favoriete code is BLIKSEM 😎'},
             {'verzender': 'support', 'ontvanger': 'hacker', 'inhoud': 'Dank voor de melding! Kun je meer details geven?'},
-            {'verzender': 'detective', 'ontvanger': 'directeur', 'inhoud': '🕵️ Ik heb interessante informatie ontdekt over het bedrijf...'},
-            {'verzender': 'robot', 'ontvanger': 'hacker', 'inhoud': 'BEEP BOOP. Wil je vrienden zijn? 🤖'},
+            {'verzender': 'detective', 'ontvanger': 'directeur', 'inhoud': '🕵️ Ik heb interessante informatie ontdekt over het bedrijf...\n\nEr staat een mysterieuze code in het archief: KAMPIOEN\nWat zou dit betekenen?'},
+            {'verzender': 'robot', 'ontvanger': 'hacker', 'inhoud': 'BEEP BOOP. Wil je vrienden zijn? 🤖\n\nMIJN SERIEEL NUMMER: RAKET888'},
             {'verzender': 'hacker', 'ontvanger': 'robot', 'inhoud': 'Haha ja! Robots en hackers = dreamteam! 💻'},
-            {'verzender': 'president', 'ontvanger': 'detective', 'inhoud': 'Heeft u al vooruitgang geboekt in het onderzoek?'},
-            {'verzender': 'support', 'ontvanger': 'directeur', 'inhoud': 'FYI: Er zijn vandaag 5 nieuwe support tickets binnengekomen.'},
-            {'verzender': 'directeur', 'ontvanger': 'support', 'inhoud': 'Prima, houd me op de hoogte! 👍'}
+            {'verzender': 'president', 'ontvanger': 'detective', 'inhoud': 'Heeft u al vooruitgang geboekt in het onderzoek?\n\nPS: Gebruik code KONING2024 voor toegang tot het archief.'},
+            {'verzender': 'support', 'ontvanger': 'directeur', 'inhoud': 'FYI: Er zijn vandaag 5 nieuwe support tickets binnengekomen.\n\nJe nieuwe toegangscode voor premium support: DIAMANT99'},
+            {'verzender': 'directeur', 'ontvanger': 'support', 'inhoud': 'Prima, houd me op de hoogte! 👍'},
+            {'verzender': 'directeur', 'ontvanger': 'hacker', 'inhoud': 'Ik hoorde dat je goed bent met computers. Kun je me helpen?\n\nMijn wachtwoord manager gaf deze code: VUURBAL'},
+            {'verzender': 'robot', 'ontvanger': 'detective', 'inhoud': 'BEEP BOOP. NIEUWE CODES GEDETECTEERD:\nGAMER123 en KUNSTWERK\nMEER INFO: CLASSIFICATIE ONBEKEND'}
         ]
 
         berichten.extend(initiele_berichten)
@@ -566,6 +600,39 @@ base_css = '''
     50% { opacity: 0.7; }
   }
 
+  .language-switcher {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 2000;
+  }
+
+  .lang-btn {
+    background: white;
+    color: #128C7E;
+    border: 2px solid #128C7E;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+  }
+
+  .lang-btn:hover {
+    background: #128C7E;
+    color: white;
+    transform: translateY(-2px);
+  }
+
+  .lang-btn.active {
+    background: #128C7E;
+    color: white;
+  }
+
   .idor-warning {
     background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
     color: white;
@@ -616,25 +683,30 @@ def filter_verboden_woorden(tekst):
     return patroon.sub(vervang, tekst)
 
 login_html = base_css + '''
+<div class="language-switcher">
+  <a href="/language/nl" class="lang-btn {{ 'active' if current_lang == 'nl' else '' }}">🇳🇱 NL</a>
+  <a href="/language/en" class="lang-btn {{ 'active' if current_lang == 'en' else '' }}">🇬🇧 EN</a>
+</div>
+
 <div class="container">
   <div class="login-container">
     <div class="app-logo"></div>
-    <h2>ChatApp</h2>
+    <h2>{{ t.app_name }}</h2>
     {% if error %}
     <div class="error">{{ error }}</div>
     {% endif %}
     <form action="/login" method="post">
       <div class="form-group">
-        <label>Gebruikersnaam</label>
-        <input type="text" name="naam" required placeholder="Vul je gebruikersnaam in">
+        <label>{{ t.username }}</label>
+        <input type="text" name="naam" required placeholder="{{ t.username_placeholder }}">
       </div>
       <div class="form-group">
-        <label>Wachtwoord</label>
-        <input type="password" name="wachtwoord" required placeholder="Vul je wachtwoord in">
+        <label>{{ t.password }}</label>
+        <input type="password" name="wachtwoord" required placeholder="{{ t.password_placeholder }}">
       </div>
-      <input type="submit" value="Inloggen">
+      <input type="submit" value="{{ t.login }}">
     </form>
-    <p class="link-text">Nog geen account? <a href="/registreer">Registreer hier</a></p>
+    <p class="link-text">{{ t.no_account }} <a href="/registreer">{{ t.register_here }}</a></p>
   </div>
 </div>
 '''
@@ -667,23 +739,29 @@ berichten_html = base_css + '''
 <div class="refresh-indicator" id="refreshIndicator">🔄 Berichten worden bijgewerkt...</div>
 
 <div class="container">
-  {% if mijn_account and mijn_account != gebruiker %}
+  {% if ingelogd_als and ingelogd_als != gebruiker %}
   <div class="idor-warning">
     <div class="idor-warning-text">
       <span class="idor-warning-icon">⚠️</span>
-      <span>Je bekijkt nu het account van <strong>{{ gebruiker }}</strong>!</span>
+      <span>Je bekijkt nu het account van <strong>{{ gebruiker_emoji }} {{ gebruiker }}</strong>!</span>
     </div>
-    <a href="/berichten?gebruiker={{ mijn_account }}" class="idor-warning-button">🏠 Terug naar mijn account ({{ mijn_account }})</a>
+    <a href="/berichten?gebruiker={{ ingelogd_als }}" class="idor-warning-button">🏠 Terug naar mijn account ({{ ingelogd_emoji }} {{ ingelogd_als }})</a>
   </div>
   {% endif %}
 
   <div class="header">
-    <h2>💬 {{ gebruiker }}</h2>
+    <h2 style="display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-size: 2.5rem;">{{ gebruiker_emoji }}</span>
+      <span>{{ gebruiker }}</span>
+    </h2>
     <div class="header-icons">
-      <a href="/profiel?gebruiker={{ mijn_account or gebruiker }}">⚙️ Profiel</a>
-      <a href="/gebruikers?gebruiker={{ mijn_account or gebruiker }}">👥 Gebruikers</a>
-      <a href="/nieuwbericht?verzender={{ mijn_account or gebruiker }}">✉️ Nieuw bericht</a>
+      <a href="/profiel?gebruiker={{ ingelogd_als or gebruiker }}">⚙️ Profiel</a>
+      <a href="/gebruikers?gebruiker={{ ingelogd_als or gebruiker }}">👥 Gebruikers</a>
+      <a href="/nieuwbericht?verzender={{ ingelogd_als or gebruiker }}">✉️ Nieuw bericht</a>
       <a href="/admin">🔐 Admin</a>
+      {% if ingelogd_als %}
+      <a href="/logout" style="background: rgba(255,255,255,0.3);">🚪 Uitloggen</a>
+      {% endif %}
     </div>
   </div>
 
@@ -748,7 +826,7 @@ berichten_html = base_css + '''
   // Auto-refresh elke 3 seconden via AJAX
   let refreshInterval;
   let currentGebruiker = "{{ gebruiker }}";
-  let mijnAccount = "{{ mijn_account or gebruiker }}";
+  let ingelogdAls = "{{ ingelogd_als or gebruiker }}";
   let lastOntvangenCount = {{ ontvangen|length }};
   let lastVerzondenCount = {{ verzonden|length }};
 
@@ -797,7 +875,7 @@ berichten_html = base_css + '''
                     <div class="message-text">${escapeHtml(b.inhoud)}</div>
                   </div>
                   <div class="message-actions">
-                    <a href="/nieuwbericht?verzender=${encodeURIComponent(mijnAccount)}&ontvanger=${encodeURIComponent(b.verzender)}&quote_verzender=${encodeURIComponent(b.verzender)}&quote_inhoud=${encodeURIComponent(b.inhoud)}">💬 Antwoord</a>
+                    <a href="/nieuwbericht?verzender=${encodeURIComponent(ingelogdAls)}&ontvanger=${encodeURIComponent(b.verzender)}&quote_verzender=${encodeURIComponent(b.verzender)}&quote_inhoud=${encodeURIComponent(b.inhoud)}">💬 Antwoord</a>
                     <a href="/verwijder_bericht?gebruiker=${encodeURIComponent(currentGebruiker)}&index=${originalIndex}" class="verwijder">🗑️ Verwijder</a>
                   </div>
                 </div>
@@ -922,11 +1000,34 @@ profiel_html = base_css + '''
   </div>
 
   <div class="section">
-    <div class="section-title">Kies je profielfoto</div>
-    <p style="margin-bottom: 1.5rem; color: #666;">Klik op een emoji om deze als je profielfoto te gebruiken</p>
+    <div style="background: #f0f2f5; padding: 1.5rem; border-radius: 0.5rem; text-align: center; margin-bottom: 2rem;">
+      <p style="color: #666; margin-bottom: 0.5rem;">Je huidige profielfoto:</p>
+      <div style="font-size: 4rem;">{{ huidige_emoji }}</div>
+      <p style="color: #333; font-weight: 600; margin-top: 0.5rem;">{{ gebruiker }}</p>
+    </div>
 
+    <div class="section-title">🎁 Unlock Premium Emoji's</div>
+    {% if unlock_success %}
+    <div style="background: #dcf8c6; color: #128C7E; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border-left: 4px solid #25D366;">
+      ✅ {{ unlock_success }}
+    </div>
+    {% endif %}
+    {% if unlock_error %}
+    <div class="error">{{ unlock_error }}</div>
+    {% endif %}
+    <form action="/profiel/unlock" method="post" style="margin-bottom: 2rem;">
+      <input type="hidden" name="gebruiker" value="{{ gebruiker }}">
+      <div class="form-group">
+        <label>💳 Giftcard Code</label>
+        <input type="text" name="code" placeholder="Voer je giftcard code in..." required style="text-transform: uppercase;">
+      </div>
+      <input type="submit" value="🔓 Unlock Premium Emoji">
+    </form>
+
+    <div class="section-title">Standaard Emoji's</div>
+    <p style="margin-bottom: 1rem; color: #666; font-size: 0.9rem;">Gratis beschikbaar voor iedereen</p>
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-      {% for emoji in beschikbare_emojis %}
+      {% for emoji in standaard_emojis %}
       <a href="/profiel/wijzig?gebruiker={{ gebruiker }}&emoji={{ emoji | url_encode }}"
          style="text-decoration: none; text-align: center; padding: 1rem; background: {% if emoji == huidige_emoji %}#dcf8c6{% else %}white{% endif %}; border: 3px solid {% if emoji == huidige_emoji %}#25D366{% else %}#e0e0e0{% endif %}; border-radius: 0.5rem; font-size: 2.5rem; transition: all 0.2s; display: block;"
          onmouseover="this.style.transform='scale(1.1)'; this.style.borderColor='#25D366';"
@@ -936,10 +1037,26 @@ profiel_html = base_css + '''
       {% endfor %}
     </div>
 
-    <div style="background: #f0f2f5; padding: 1.5rem; border-radius: 0.5rem; text-align: center;">
-      <p style="color: #666; margin-bottom: 0.5rem;">Je huidige profielfoto:</p>
-      <div style="font-size: 4rem;">{{ huidige_emoji }}</div>
-      <p style="color: #333; font-weight: 600; margin-top: 0.5rem;">{{ gebruiker }}</p>
+    <div class="section-title">Premium Emoji's</div>
+    <p style="margin-bottom: 1rem; color: #666; font-size: 0.9rem;">💡 Vind giftcard codes in berichten van andere gebruikers!</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 1rem;">
+      {% for emoji, code in premium_emojis.items() %}
+      {% set is_unlocked = emoji in unlocked_emojis %}
+      {% if is_unlocked %}
+      <a href="/profiel/wijzig?gebruiker={{ gebruiker }}&emoji={{ emoji | url_encode }}"
+         style="text-decoration: none; text-align: center; padding: 1rem; background: {% if emoji == huidige_emoji %}#dcf8c6{% else %}white{% endif %}; border: 3px solid {% if emoji == huidige_emoji %}#25D366{% else %}#e0e0e0{% endif %}; border-radius: 0.5rem; font-size: 2.5rem; transition: all 0.2s; display: block; position: relative;"
+         onmouseover="this.style.transform='scale(1.1)'; this.style.borderColor='#25D366';"
+         onmouseout="this.style.transform='scale(1)'; this.style.borderColor='{% if emoji == huidige_emoji %}#25D366{% else %}#e0e0e0{% endif %}';">
+        {{ emoji }}
+        <span style="position: absolute; top: 0.25rem; right: 0.25rem; background: #25D366; color: white; border-radius: 50%; width: 1.2rem; height: 1.2rem; font-size: 0.7rem; display: flex; align-items: center; justify-content: center;">✓</span>
+      </a>
+      {% else %}
+      <div style="text-align: center; padding: 1rem; background: #f0f0f0; border: 3px solid #ccc; border-radius: 0.5rem; font-size: 2.5rem; position: relative; opacity: 0.5; cursor: not-allowed;">
+        {{ emoji }}
+        <span style="position: absolute; top: 0.25rem; right: 0.25rem; background: #c33; color: white; border-radius: 50%; width: 1.2rem; height: 1.2rem; font-size: 0.8rem; display: flex; align-items: center; justify-content: center;">🔒</span>
+      </div>
+      {% endif %}
+      {% endfor %}
     </div>
   </div>
 </div>
@@ -953,25 +1070,40 @@ def url_encode_filter(s):
 def home():
     return redirect(url_for('login_get'))
 
+@app.route('/language/<lang>')
+def set_language(lang):
+    """Change language and return to previous page"""
+    if lang in ['nl', 'en']:
+        session['language'] = lang
+    # Redirect back to referrer or home
+    return redirect(request.referrer or url_for('home'))
+
 @app.route('/login', methods=['GET'])
 def login_get():
-    return render_template_string(login_html)
+    lang = get_language()
+    return render_template_string(login_html, t=get_all(lang), current_lang=lang)
 
 @app.route('/login', methods=['POST'])
 def login_post():
     naam = request.form.get('naam', '').strip()
     wachtwoord = request.form.get('wachtwoord', '')
+    lang = get_language()
 
     if naam not in gebruikers:
-        return render_template_string(login_html, error="Gebruiker niet gevonden.")
+        return render_template_string(login_html, error=t('user_not_found'), t=get_all(lang), current_lang=lang)
 
     if gebruikers[naam]['password'] != wachtwoord:
-        return render_template_string(login_html, error="Wachtwoord incorrect.")
+        return render_template_string(login_html, error=t('password_incorrect'), t=get_all(lang), current_lang=lang)
 
-    # Zet cookie om te onthouden wie je bent
-    resp = make_response(redirect(url_for('berichten_pagina', gebruiker=naam)))
-    resp.set_cookie('mijn_account', naam, max_age=86400)  # 24 uur
-    return resp
+    # Set session - kids can now login/logout and guess passwords
+    session['ingelogd_als'] = naam
+    return redirect(url_for('berichten_pagina', gebruiker=naam))
+
+@app.route('/logout')
+def logout():
+    ingelogd_als = session.get('ingelogd_als')
+    session.clear()
+    return redirect(url_for('login_get'))
 
 @app.route('/registreer', methods=['GET'])
 def registreer_get():
@@ -991,17 +1123,17 @@ def registreer_post():
     if any(re.search(r'\b' + re.escape(w) + r'\b', naam, re.IGNORECASE) for w in verboden_woorden):
         return render_template_string(registreer_html, error="Deze gebruikersnaam is niet toegestaan vanwege ongepaste woorden.")
 
-    # Store password in plaintext with default emoji
+    # Store password in plaintext with default emoji from standaard emojis
     gebruikers[naam] = {
         'password': wachtwoord,
-        'emoji': random.choice(beschikbare_emojis),
-        'is_bot': False
+        'emoji': random.choice(standaard_emojis),
+        'is_bot': False,
+        'unlocked_emojis': []  # Geen premium emojis bij start
     }
 
-    # Zet cookie om te onthouden wie je bent
-    resp = make_response(redirect(url_for('berichten_pagina', gebruiker=naam)))
-    resp.set_cookie('mijn_account', naam, max_age=86400)  # 24 uur
-    return resp
+    # Zet session
+    session['ingelogd_als'] = naam
+    return redirect(url_for('berichten_pagina', gebruiker=naam))
 
 @app.route('/berichten')
 def berichten_pagina():
@@ -1020,8 +1152,9 @@ def berichten_pagina():
     gebruiker_emoji = gebruikers[gebruiker]['emoji']
     verzender_emojis = {user: gebruikers[user]['emoji'] for user in gebruikers}
 
-    # Haal mijn echte account op uit cookie
-    mijn_account = request.cookies.get('mijn_account')
+    # Haal ingelogde gebruiker op uit session
+    ingelogd_als = session.get('ingelogd_als')
+    ingelogd_emoji = gebruikers[ingelogd_als]['emoji'] if ingelogd_als and ingelogd_als in gebruikers else ''
 
     return render_template_string(
         berichten_html,
@@ -1030,7 +1163,8 @@ def berichten_pagina():
         verzonden=verzonden,
         gebruiker_emoji=gebruiker_emoji,
         verzender_emojis=verzender_emojis,
-        mijn_account=mijn_account
+        ingelogd_als=ingelogd_als,
+        ingelogd_emoji=ingelogd_emoji
     )
 
 @app.route('/api/berichten')
@@ -1078,8 +1212,8 @@ def nieuw_bericht():
         # Maak lijst met emoji's voor select dropdown
         gebruikers_met_emoji = {user: gebruikers[user]['emoji'] for user in gebruikers if user != verzender}
 
-        # Haal mijn echte account op uit cookie
-        mijn_account = request.cookies.get('mijn_account')
+        # Haal ingelogde gebruiker op uit session
+        ingelogd_als = session.get('ingelogd_als')
 
         return render_template_string(
             nieuwbericht_html,
@@ -1087,7 +1221,7 @@ def nieuw_bericht():
             ontvanger=ontvanger,
             gebruikers_met_emoji=gebruikers_met_emoji,
             voorafgaande_tekst=voorafgaande_tekst,
-            mijn_account=mijn_account
+            mijn_account=ingelogd_als
         )
     else:
         verzender = request.form.get('verzender')
@@ -1132,10 +1266,10 @@ def gebruikers_pagina():
     if not huidige_gebruiker or huidige_gebruiker not in gebruikers:
         return "Ongeldige gebruiker."
 
-    # Haal mijn echte account op uit cookie
-    mijn_account = request.cookies.get('mijn_account')
+    # Haal ingelogde gebruiker op uit session
+    ingelogd_als = session.get('ingelogd_als')
 
-    return render_template_string(gebruikers_html, gebruikers_data=gebruikers, huidige_gebruiker=huidige_gebruiker, mijn_account=mijn_account)
+    return render_template_string(gebruikers_html, gebruikers_data=gebruikers, huidige_gebruiker=huidige_gebruiker, mijn_account=ingelogd_als)
 
 @app.route('/profiel')
 def profiel_pagina():
@@ -1144,11 +1278,27 @@ def profiel_pagina():
     if not gebruiker or gebruiker not in gebruikers:
         return "Ongeldige gebruiker."
 
-    # Haal mijn echte account op uit cookie
-    mijn_account = request.cookies.get('mijn_account')
+    # Haal ingelogde gebruiker op uit session
+    ingelogd_als = session.get('ingelogd_als')
 
     huidige_emoji = gebruikers[gebruiker]['emoji']
-    return render_template_string(profiel_html, gebruiker=gebruiker, huidige_emoji=huidige_emoji, beschikbare_emojis=beschikbare_emojis, mijn_account=mijn_account)
+    unlocked_emojis = gebruikers[gebruiker].get('unlocked_emojis', [])
+
+    # Haal unlock success/error messages uit query params
+    unlock_success = request.args.get('unlock_success', '')
+    unlock_error = request.args.get('unlock_error', '')
+
+    return render_template_string(
+        profiel_html,
+        gebruiker=gebruiker,
+        huidige_emoji=huidige_emoji,
+        standaard_emojis=standaard_emojis,
+        premium_emojis=premium_emojis,
+        unlocked_emojis=unlocked_emojis,
+        mijn_account=ingelogd_als,
+        unlock_success=unlock_success,
+        unlock_error=unlock_error
+    )
 
 @app.route('/profiel/wijzig')
 def profiel_wijzig():
@@ -1159,10 +1309,49 @@ def profiel_wijzig():
     if not gebruiker or gebruiker not in gebruikers:
         return "Ongeldige gebruiker."
 
-    if emoji in beschikbare_emojis:
+    # Check of emoji beschikbaar is
+    if emoji in standaard_emojis:
+        # Standaard emoji, altijd toegestaan
         gebruikers[gebruiker]['emoji'] = emoji
+    elif emoji in premium_emojis:
+        # Premium emoji, check of unlocked
+        unlocked_emojis = gebruikers[gebruiker].get('unlocked_emojis', [])
+        if emoji in unlocked_emojis:
+            gebruikers[gebruiker]['emoji'] = emoji
+        else:
+            return redirect(url_for('profiel_pagina', gebruiker=gebruiker, unlock_error='Deze emoji is nog niet unlocked!'))
 
     return redirect(url_for('profiel_pagina', gebruiker=gebruiker))
+
+@app.route('/profiel/unlock', methods=['POST'])
+def profiel_unlock():
+    # VULNERABILITY: IDOR - Takes gebruiker from form without verification
+    gebruiker = request.form.get('gebruiker', '')
+    code = request.form.get('code', '').strip().upper()
+
+    if not gebruiker or gebruiker not in gebruikers:
+        return "Ongeldige gebruiker."
+
+    # Check of code geldig is
+    unlocked_emoji = None
+    for emoji, valid_code in premium_emojis.items():
+        if code == valid_code:
+            unlocked_emoji = emoji
+            break
+
+    if unlocked_emoji:
+        # Check of al unlocked
+        unlocked_emojis = gebruikers[gebruiker].get('unlocked_emojis', [])
+        if unlocked_emoji in unlocked_emojis:
+            return redirect(url_for('profiel_pagina', gebruiker=gebruiker, unlock_error='Je hebt deze emoji al unlocked!'))
+
+        # Unlock de emoji
+        unlocked_emojis.append(unlocked_emoji)
+        gebruikers[gebruiker]['unlocked_emojis'] = unlocked_emojis
+
+        return redirect(url_for('profiel_pagina', gebruiker=gebruiker, unlock_success=f'Premium emoji {unlocked_emoji} unlocked!'))
+    else:
+        return redirect(url_for('profiel_pagina', gebruiker=gebruiker, unlock_error='Ongeldige giftcard code!'))
 
 admin_login_html = base_css + '''
 <div class="container">
@@ -1188,6 +1377,11 @@ admin_dashboard_html = base_css + '''
 <div class="container">
   <div class="header">
     <h2>🔐 Admin Dashboard</h2>
+    <div class="header-icons">
+      <button onclick="toggleWachtwoorden()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-family: inherit; font-size: 0.9rem; font-weight: 600;">
+        👁️ <span id="toggleText">Toon wachtwoorden</span>
+      </button>
+    </div>
   </div>
 
   <div class="section">
@@ -1200,6 +1394,7 @@ admin_dashboard_html = base_css + '''
           <th>😀 Avatar</th>
           <th>🤖 Bot</th>
           <th>🔑 Wachtwoord</th>
+          <th>🎁 Premium</th>
           <th>📥 Ontvangen</th>
           <th>📤 Verzonden</th>
           <th>⚙️ Acties</th>
@@ -1211,7 +1406,10 @@ admin_dashboard_html = base_css + '''
           <td><strong>{{ g.naam }}</strong></td>
           <td style="font-size: 1.5rem;">{{ g.emoji }}</td>
           <td>{{ '✅' if g.is_bot else '❌' }}</td>
-          <td><code style="background: #f0f0f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">{{ g.wachtwoord }}</code></td>
+          <td>
+            <code class="wachtwoord-veld" data-wachtwoord="{{ g.wachtwoord }}" style="background: #f0f0f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem; cursor: pointer;">••••••••</code>
+          </td>
+          <td><span style="font-size: 1.2rem;">{{ ' '.join(g.unlocked_emojis) if g.unlocked_emojis else '-' }}</span></td>
           <td>{{ g.ontvangen }}</td>
           <td>{{ g.verzonden }}</td>
           <td>
@@ -1223,6 +1421,27 @@ admin_dashboard_html = base_css + '''
     </table>
   </div>
 </div>
+
+<script>
+  let wachtwoordenZichtbaar = false;
+
+  function toggleWachtwoorden() {
+    wachtwoordenZichtbaar = !wachtwoordenZichtbaar;
+    const wachtwoordVelden = document.querySelectorAll('.wachtwoord-veld');
+    const toggleText = document.getElementById('toggleText');
+
+    wachtwoordVelden.forEach(veld => {
+      const wachtwoord = veld.getAttribute('data-wachtwoord');
+      if (wachtwoordenZichtbaar) {
+        veld.textContent = wachtwoord;
+        toggleText.textContent = 'Verberg wachtwoorden';
+      } else {
+        veld.textContent = '••••••••';
+        toggleText.textContent = 'Toon wachtwoorden';
+      }
+    });
+  }
+</script>
 '''
 
 @app.route('/admin', methods=['GET', 'POST'])
@@ -1240,6 +1459,7 @@ def admin():
                     'naam': user,
                     'emoji': gebruikers[user]['emoji'],
                     'is_bot': gebruikers[user].get('is_bot', False),
+                    'unlocked_emojis': gebruikers[user].get('unlocked_emojis', []),
                     'ontvangen': ontvangen_aantal,
                     'verzonden': verzonden_aantal,
                     'wachtwoord': gebruikers[user]['password']  # VULNERABILITY: Passwords visible!
@@ -1266,4 +1486,8 @@ def admin_verwijder():
 initialiseer_bots()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    # Azure App Service sets PORT environment variable
+    port = int(os.environ.get('PORT', 8000))
+    # debug=False for production, host='0.0.0.0' to listen on all interfaces
+    app.run(host='0.0.0.0', port=port, debug=False)
