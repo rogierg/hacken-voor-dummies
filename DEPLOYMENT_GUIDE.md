@@ -9,12 +9,14 @@ This project uses a **dual-environment strategy** to minimize costs:
 - **Cost**: $0/month
 - **Deployment**: Automatic on every push to main
 - **Pipeline**: `azure-pipelines.yml` (default)
+- **IP Restrictions**: Optional via `allowedIps` variable
 - **URL**: `web-stg-XXXXXX.azurewebsites.net`
 
 ### 🎓 Production (B1 Basic Tier)
 - **Purpose**: Live workshops with 25 students
 - **Cost**: ~$13/month when running
 - **Deployment**: Manual trigger only
+- **IP Restrictions**: Optional via `allowedIps` variable (recommended for school network)
 - **Pipelines**: 
   - `azure-pipelines-production.yml` (create)
   - `azure-pipelines-cleanup.yml` (delete)

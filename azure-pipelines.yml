@@ -13,6 +13,7 @@ variables:
   # Set these in Azure DevOps Library or Pipeline Variables
   # azureSubscription: Set as pipeline variable (your Azure service connection name)
   # resourceGroupName: Set as pipeline variable (e.g., rg-hacken-voor-dummies)
+  # allowedIps: (Optional) Set as pipeline variable (comma-separated, e.g., "1.2.3.4/32,5.6.7.8/32")
   pythonVersion: '3.12'
   environmentName: 'stg'
   skuName: 'F1'
@@ -34,6 +35,13 @@ stages:
         inlineScript: |
           # Build parameters for F1 staging
           params="environmentName=$(environmentName) skuName=$(skuName) skuTier=$(skuTier)"
+
+          # Add optional IP allowlist if set
+          if [ -n "$(allowedIps)" ]; then
+            # Convert comma-separated IPs to JSON array
+            ips=$(echo "$(allowedIps)" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+            params="$params allowedIpAddresses=$ips"
+          fi
 
           # Deploy infrastructure with explicit name
           echo "Deploying with parameters: $params"
