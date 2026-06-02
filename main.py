@@ -411,6 +411,28 @@ base_css = '''
     line-height: 1.4;
   }
 
+  .reply-bubble {
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+    border-left: 4px solid #128C7E;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.85rem;
+  }
+
+  .reply-author {
+    font-weight: 600;
+    color: #128C7E;
+    margin-bottom: 0.25rem;
+    font-size: 0.8rem;
+  }
+
+  .reply-content {
+    color: #555;
+    font-style: italic;
+    line-height: 1.3;
+  }
+
   .message-actions {
     margin-top: 0.5rem;
     display: flex;
@@ -836,6 +858,24 @@ berichten_html = base_css + '''
     return div.innerHTML;
   }
 
+  function formatMessageWithReplies(text) {
+    // Parse [quote van username]content[/quote] and render as reply bubbles
+    // Match both Dutch and English patterns
+    const quotePattern = /\[quote (?:van|from) ([^\]]+)\](.*?)\[\/quote\]/gs;
+
+    let formatted = escapeHtml(text);
+    formatted = formatted.replace(quotePattern, function(match, author, content) {
+      const escapedAuthor = author.trim();
+      const escapedContent = content.trim();
+      return `<div class="reply-bubble">
+        <div class="reply-author">↩️ ${escapedAuthor}</div>
+        <div class="reply-content">${escapedContent}</div>
+      </div>`;
+    });
+
+    return formatted;
+  }
+
   function updateMessages() {
     const indicator = document.getElementById('refreshIndicator');
 
@@ -872,7 +912,7 @@ berichten_html = base_css + '''
                 <div>
                   <div class="message-bubble">
                     <div class="message-sender">${escapeHtml(b.verzender)}</div>
-                    <div class="message-text">${escapeHtml(b.inhoud)}</div>
+                    <div class="message-text">${formatMessageWithReplies(b.inhoud)}</div>
                   </div>
                   <div class="message-actions">
                     <a href="/nieuwbericht?verzender=${encodeURIComponent(ingelogdAls)}&ontvanger=${encodeURIComponent(b.verzender)}&quote_verzender=${encodeURIComponent(b.verzender)}&quote_inhoud=${encodeURIComponent(b.inhoud)}">💬 Antwoord</a>
@@ -899,7 +939,7 @@ berichten_html = base_css + '''
                 <div>
                   <div class="message-bubble">
                     <div class="message-sender">Aan: ${escapeHtml(b.ontvanger)}</div>
-                    <div class="message-text">${escapeHtml(b.inhoud)}</div>
+                    <div class="message-text">${formatMessageWithReplies(b.inhoud)}</div>
                   </div>
                 </div>
               </li>
@@ -922,6 +962,14 @@ berichten_html = base_css + '''
         console.error('Fout bij ophalen berichten:', error);
       });
   }
+
+  // Format existing messages on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.message-text').forEach(function(el) {
+      const originalText = el.textContent;
+      el.innerHTML = formatMessageWithReplies(originalText);
+    });
+  });
 
   // Start auto-refresh met kortere interval (3 seconden)
   refreshInterval = setInterval(updateMessages, 3000);
