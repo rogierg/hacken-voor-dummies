@@ -1,10 +1,8 @@
-# Azure DevOps Pipeline - Staging (F1 Free Tier)
-# Automatically deploys to F1 free tier on push to main branch for testing
+# Azure DevOps Pipeline - Production (B1 Basic Tier)
+# Manual trigger only - creates B1 tier for workshops
+# Run this before a workshop, use cleanup pipeline after
 
-trigger:
-  branches:
-    include:
-    - main
+trigger: none # Manual only
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -13,14 +11,15 @@ variables:
   # Set these in Azure DevOps Library or Pipeline Variables
   # azureSubscription: Set as pipeline variable (your Azure service connection name)
   # resourceGroupName: Set as pipeline variable (e.g., rg-hacken-voor-dummies)
+  # allowedIps: (Optional) Set as pipeline variable for school network
   pythonVersion: '3.12'
-  environmentName: 'stg'
-  skuName: 'F1'
-  skuTier: 'Free'
+  environmentName: 'prod'
+  skuName: 'B1'
+  skuTier: 'Basic'
 
 stages:
 - stage: Infrastructure
-  displayName: 'Deploy Infrastructure'
+  displayName: 'Deploy B1 Infrastructure'
   jobs:
   - job: DeployInfra
     displayName: 'Deploy Bicep Templates'
@@ -32,12 +31,19 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
-          # Build parameters for F1 staging
+          # Build parameters for B1 production
           params="environmentName=$(environmentName) skuName=$(skuName) skuTier=$(skuTier)"
 
+          # Add optional IP allowlist if set
+          if [ -n "$(allowedIps)" ]; then
+            # Convert comma-separated IPs to JSON array
+            ips=$(echo "$(allowedIps)" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+            params="$params allowedIpAddresses=$ips"
+          fi
+
           # Deploy infrastructure with explicit name
-          echo "Deploying with parameters: $params"
-          deployment_name="infra-deployment"
+          echo "Deploying B1 production with parameters: $params"
+          deployment_name="infra-deployment-prod"
 
           az deployment group create \
             --resource-group $(resourceGroupName) \

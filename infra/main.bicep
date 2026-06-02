@@ -4,6 +4,8 @@ param resourceGroupName string = resourceGroup().name
 param existingAppServicePlanName string = ''
 param webAppName string = ''
 param allowedIpAddresses array = []
+param skuName string = 'F1'
+param skuTier string = 'Free'
 
 // Reference existing App Service Plan (if provided)
 resource existingAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' existing = if (!empty(existingAppServicePlanName)) {
@@ -19,8 +21,8 @@ resource newAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = if (empty(ex
   name: 'asp-${environmentName}-${resourceToken}'
   location: location
   sku: {
-    name: 'B1'
-    tier: 'Basic'
+    name: skuName
+    tier: skuTier
   }
   kind: 'linux'
   properties: {
@@ -40,7 +42,7 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
     serverFarmId: appServicePlanId
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.12'
-      alwaysOn: true
+      alwaysOn: skuTier != 'Free' // F1 doesn't support alwaysOn
       http20Enabled: true
       minTlsVersion: '1.2'
       ipSecurityRestrictions: [for (ip, index) in allowedIpAddresses: {

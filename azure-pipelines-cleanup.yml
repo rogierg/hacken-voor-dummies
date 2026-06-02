@@ -1,0 +1,79 @@
+# Azure DevOps Pipeline - Cleanup Production (B1)
+# Manual trigger only - deletes B1 production resources to stop billing
+# Run this after a workshop to save costs
+
+trigger: none # Manual only
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Set these in Azure DevOps Library or Pipeline Variables
+  # azureSubscription: Set as pipeline variable (your Azure service connection name)
+  # resourceGroupName: Set as pipeline variable (e.g., rg-hacken-voor-dummies)
+  environmentName: 'prod'
+
+stages:
+- stage: Cleanup
+  displayName: 'Delete B1 Production Resources'
+  jobs:
+  - job: DeleteResources
+    displayName: 'Delete App Service Plan and Web App'
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Delete production resources'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Searching for production resources (environmentName=prod)..."
+
+          # Find the App Service Plan for prod environment
+          planName=$(az appservice plan list \
+            --resource-group $(resourceGroupName) \
+            --query "[?tags.environment=='$(environmentName)' || contains(name, '-prod-')].name" \
+            --output tsv | head -1)
+
+          if [ -z "$planName" ]; then
+            echo "No production App Service Plan found. Checking for any prod webapp..."
+
+            # Try to find webapp with prod in the name
+            webappName=$(az webapp list \
+              --resource-group $(resourceGroupName) \
+              --query "[?contains(name, '-prod-')].name" \
+              --output tsv | head -1)
+
+            if [ -z "$webappName" ]; then
+              echo "##[warning]No production resources found to delete."
+              exit 0
+            fi
+
+            echo "Found production webapp: $webappName"
+            echo "Deleting webapp..."
+            az webapp delete \
+              --name $webappName \
+              --resource-group $(resourceGroupName)
+            echo "Webapp deleted successfully."
+
+            # Get the plan after deleting webapp
+            planName=$(az appservice plan list \
+              --resource-group $(resourceGroupName) \
+              --query "[?contains(name, '-prod-')].name" \
+              --output tsv | head -1)
+          fi
+
+          if [ -n "$planName" ]; then
+            echo "Found production App Service Plan: $planName"
+            echo "Deleting App Service Plan (this stops all B1 charges)..."
+
+            az appservice plan delete \
+              --name $planName \
+              --resource-group $(resourceGroupName) \
+              --yes
+
+            echo "##[section]Production resources deleted successfully!"
+            echo "B1 billing has stopped. Staging (F1 free) is still running."
+          else
+            echo "##[warning]No App Service Plan found to delete."
+          fi
