@@ -47,15 +47,30 @@ stages:
             params="$params allowedIpAddresses=$ips"
           fi
 
-          # Deploy infrastructure and capture output
-          deployment_output=$(az deployment group create \
+          # Deploy infrastructure with explicit name
+          echo "Deploying with parameters: $params"
+          deployment_name="infra-deployment"
+
+          az deployment group create \
             --resource-group $(resourceGroupName) \
+            --name $deployment_name \
             --template-file infra/main.bicep \
-            --parameters $params \
+            --parameters $params
+
+          # Get the webapp name from deployment outputs
+          deployment_output=$(az deployment group show \
+            --resource-group $(resourceGroupName) \
+            --name $deployment_name \
             --query properties.outputs.webAppName.value \
             --output tsv)
 
           echo "Deployed webapp name: $deployment_output"
+
+          if [ -z "$deployment_output" ]; then
+            echo "##[error]Failed to get webapp name from deployment"
+            exit 1
+          fi
+
           echo "##vso[task.setvariable variable=webAppName;isOutput=true]$deployment_output"
       name: infraDeploy
 
