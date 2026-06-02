@@ -2,6 +2,8 @@ param location string = resourceGroup().location
 param environmentName string
 param resourceGroupName string = resourceGroup().name
 param existingAppServicePlanName string = ''
+param webAppName string = ''
+param allowedIpAddresses array = []
 
 // Reference existing App Service Plan (if provided)
 resource existingAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' existing = if (!empty(existingAppServicePlanName)) {
@@ -28,7 +30,7 @@ resource newAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = if (empty(ex
 
 // Web App
 resource webApp 'Microsoft.Web/sites@2021-02-01' = {
-  name: 'web-${environmentName}-${resourceToken}'
+  name: !empty(webAppName) ? webAppName : 'web-${environmentName}-${resourceToken}'
   location: location
   kind: 'app,linux'
   tags: {
@@ -41,6 +43,12 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
       alwaysOn: true
       http20Enabled: true
       minTlsVersion: '1.2'
+      ipSecurityRestrictions: [for (ip, index) in allowedIpAddresses: {
+        ipAddress: ip
+        action: 'Allow'
+        priority: 100 + index
+        name: 'AllowedIP${index}'
+      }]
       appSettings: [
         {
           name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE'

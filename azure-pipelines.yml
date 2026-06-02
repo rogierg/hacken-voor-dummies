@@ -13,6 +13,8 @@ variables:
   # Set these in Azure DevOps Library or Pipeline Variables
   # azureSubscription: Set as pipeline variable (your Azure service connection name)
   # resourceGroupName: Set as pipeline variable (e.g., rg-hacken-voor-dummies)
+  # webAppName: (Optional) Set as pipeline variable for custom app name
+  # allowedIps: (Optional) Set as pipeline variable (comma-separated, e.g., "1.2.3.4/32,5.6.7.8/32")
   pythonVersion: '3.12'
   environmentName: 'prod'
 
@@ -30,10 +32,26 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
+          # Build parameters
+          params="environmentName=$(environmentName)"
+
+          # Add optional webAppName if set
+          if [ -n "$(webAppName)" ]; then
+            params="$params webAppName=$(webAppName)"
+          fi
+
+          # Add optional IP allowlist if set
+          if [ -n "$(allowedIps)" ]; then
+            # Convert comma-separated IPs to JSON array
+            ips=$(echo "$(allowedIps)" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+            params="$params allowedIpAddresses=$ips"
+          fi
+
+          # Deploy infrastructure
           az deployment group create \
             --resource-group $(resourceGroupName) \
             --template-file infra/main.bicep \
-            --parameters environmentName=$(environmentName)
+            --parameters $params
 
           # Get the App Service name and export for next stages
           appName=$(az webapp list \

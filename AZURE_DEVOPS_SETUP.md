@@ -81,10 +81,24 @@ Create a secure connection using OIDC (no secrets needed):
 3. Click the **Variables** button (top right)
 4. Click **New variable** and add these:
 
+### Required Variables
+
 | Variable Name | Value | Keep secret? | Notes |
 |--------------|-------|--------------|-------|
 | `azureSubscription` | `Azure-HackenVoorDummies-OIDC` | No | Must match service connection name exactly |
 | `resourceGroupName` | `rg-hacken-voor-dummies` | No | The RG you created in Step 1 |
+
+### Optional Variables
+
+| Variable Name | Example Value | Keep secret? | Notes |
+|--------------|---------------|--------------|-------|
+| `webAppName` | `hacken-voor-dummies-prod` | No | Custom app name (otherwise auto-generated) |
+| `allowedIps` | `1.2.3.4/32,5.6.7.8/32` | No | Comma-separated IPs/ranges to allow access |
+
+**IP Restriction Examples:**
+- School network: `203.0.113.0/24` (entire subnet)
+- Specific IP: `203.0.113.50/32` (single address)
+- Multiple: `203.0.113.0/24,198.51.100.25/32`
 
 5. Click **Save**
 
@@ -150,7 +164,50 @@ Your F1 App Service Plan:
 - Configure custom domain (requires paid tier)
 - Set up monitoring and alerts
 
-## Clean Up
+## Cost Management
+
+**B1 Basic tier costs ~$13/month** running 24/7. To save costs between workshops:
+
+### Stop Resources (Pause Billing)
+
+**Option 1: Stop App Service (reduces cost ~40%)**
+```bash
+# Stop the app (still pay for App Service Plan at reduced rate)
+az webapp stop --name YOUR_APP_NAME --resource-group rg-hacken-voor-dummies
+
+# Restart when needed
+az webapp start --name YOUR_APP_NAME --resource-group rg-hacken-voor-dummies
+```
+
+**Option 2: Delete App Service Plan (stops all charges)**
+```bash
+# Delete just the App Service Plan (keeps RG and pipeline config)
+az appservice plan delete \
+  --name YOUR_PLAN_NAME \
+  --resource-group rg-hacken-voor-dummies \
+  --yes
+
+# Redeploy via Azure DevOps pipeline when needed
+# Pipelines → Run pipeline
+```
+
+**Option 3: Delete Everything**
+```bash
+# Delete entire resource group (nuclear option)
+az group delete --name rg-hacken-voor-dummies --yes
+```
+
+### Recommended: Between Workshops
+
+1. **Delete App Service Plan** to stop billing completely
+2. **Keep Resource Group + Pipeline** for easy redeployment
+3. **Re-run pipeline** before next workshop (takes ~5 min)
+
+This gives you $0 costs when not in use and quick deployment when needed.
+
+## Clean Up (Permanent Removal)
+
+Remove everything including Azure DevOps setup:
 
 ```bash
 # Delete resource group
