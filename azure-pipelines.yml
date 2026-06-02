@@ -1,5 +1,5 @@
 # Azure DevOps Pipeline for hacken-voor-dummies
-# Automatically deploys to Azure App Service (F1 Free Tier) on push to main branch
+# Automatically deploys infrastructure and application to Azure on push to main branch
 
 trigger:
   branches:
@@ -12,10 +12,38 @@ pool:
 variables:
   # Set these in Azure DevOps Library or Pipeline Variables
   # azureSubscription: Set as pipeline variable (your Azure service connection name)
-  # webAppName: Set as pipeline variable (your App Service name)
+  # resourceGroupName: Set as pipeline variable (e.g., rg-hacken-voor-dummies)
   pythonVersion: '3.12'
+  environmentName: 'prod'
 
 stages:
+- stage: Infrastructure
+  displayName: 'Deploy Infrastructure'
+  jobs:
+  - job: DeployInfra
+    displayName: 'Deploy Bicep Templates'
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Deploy Bicep infrastructure'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az deployment group create \
+            --resource-group $(resourceGroupName) \
+            --template-file infra/main.bicep \
+            --parameters environmentName=$(environmentName)
+
+          # Get the App Service name and export for next stages
+          appName=$(az webapp list \
+            --resource-group $(resourceGroupName) \
+            --query "[0].name" \
+            --output tsv)
+
+          echo "##vso[task.setvariable variable=webAppName;isOutput=true]$appName"
+      name: infraDeploy
+
 - stage: Build
   displayName: 'Build Application'
   jobs:
@@ -50,8 +78,12 @@ stages:
 
 - stage: Deploy
   displayName: 'Deploy to Azure App Service'
-  dependsOn: Build
+  dependsOn:
+  - Infrastructure
+  - Build
   condition: succeeded()
+  variables:
+    webAppName: $[ stageDependencies.Infrastructure.DeployInfra.outputs['infraDeploy.webAppName'] ]
   jobs:
   - deployment: DeployWeb
     displayName: 'Deploy Flask App'

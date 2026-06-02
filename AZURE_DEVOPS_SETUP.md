@@ -27,27 +27,7 @@ az group create \
 az group show --name rg-hacken-voor-dummies --output table
 ```
 
-## Step 2: Deploy Infrastructure
-
-Deploy your App Service to the new resource group:
-
-```bash
-# Deploy using Bicep
-az deployment group create \
-  --resource-group rg-hacken-voor-dummies \
-  --template-file infra/main.bicep \
-  --parameters environmentName=prod
-
-# Get your App Service name (save this for later)
-az webapp list \
-  --resource-group rg-hacken-voor-dummies \
-  --query "[0].name" \
-  --output tsv
-```
-
-Save the App Service name - you'll need it for pipeline variables!
-
-## Step 3: Create Azure DevOps Project
+## Step 2: Create Azure DevOps Project
 
 1. Go to https://dev.azure.com
 2. Click **+ New Project**
@@ -55,7 +35,7 @@ Save the App Service name - you'll need it for pipeline variables!
 4. Set visibility: **Private** (recommended) or **Public**
 5. Click **Create**
 
-## Step 4: Connect to GitHub
+## Step 3: Connect to GitHub
 
 1. In your Azure DevOps project, go to **Pipelines**
 2. Click **Create Pipeline**
@@ -66,7 +46,7 @@ Save the App Service name - you'll need it for pipeline variables!
 7. Select `/azure-pipelines.yml`
 8. **DON'T RUN YET** - we need to configure the service connection first
 
-## Step 5: Create Service Connection with Workload Identity Federation
+## Step 4: Create Service Connection with Workload Identity Federation
 
 Create a secure connection using OIDC (no secrets needed):
 
@@ -94,7 +74,7 @@ Create a secure connection using OIDC (no secrets needed):
 
 12. Click **Save**
 
-## Step 6: Configure Pipeline Variables
+## Step 5: Configure Pipeline Variables
 
 1. In Azure DevOps, go to **Pipelines**
 2. Find your pipeline and click **Edit**
@@ -104,11 +84,13 @@ Create a secure connection using OIDC (no secrets needed):
 | Variable Name | Value | Keep secret? | Notes |
 |--------------|-------|--------------|-------|
 | `azureSubscription` | `Azure-HackenVoorDummies-OIDC` | No | Must match service connection name exactly |
-| `webAppName` | Your App Service name | No | From step 2 (e.g., `app-hacken-prod-abc123`) |
+| `resourceGroupName` | `rg-hacken-voor-dummies` | No | The RG you created in Step 1 |
 
 5. Click **Save**
 
-## Step 7: Run Your First Deployment
+## Step 6: Run Your First Deployment
+
+The pipeline will deploy infrastructure and your application:
 
 1. Go to **Pipelines**
 2. Click your pipeline
@@ -116,13 +98,13 @@ Create a secure connection using OIDC (no secrets needed):
 4. Click **Run**
 
 The pipeline will:
-- ✅ Authenticate using OIDC (no secrets!)
+- ✅ Deploy infrastructure (App Service, App Service Plan)
 - ✅ Build your Flask app
 - ✅ Package it as a ZIP
 - ✅ Deploy to Azure App Service
 - ✅ Configure the startup command
 
-## Step 8: Verify Deployment
+## Step 7: Verify Deployment
 
 After the pipeline succeeds:
 
