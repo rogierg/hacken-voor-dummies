@@ -17,8 +17,8 @@ resource newAppServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = if (empty(ex
   name: 'asp-${environmentName}-${resourceToken}'
   location: location
   sku: {
-    name: 'F1'
-    tier: 'Free'
+    name: 'B1'
+    tier: 'Basic'
   }
   kind: 'linux'
   properties: {
@@ -37,8 +37,8 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
   properties: {
     serverFarmId: appServicePlanId
     siteConfig: {
-      linuxFxVersion: 'PYTHON|3.11'
-      alwaysOn: false
+      linuxFxVersion: 'PYTHON|3.12'
+      alwaysOn: true
       http20Enabled: true
       minTlsVersion: '1.2'
       appSettings: [
@@ -48,7 +48,7 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
         }
         {
           name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'true'
+          value: 'false'
         }
         {
           name: 'FLASK_ENV'
