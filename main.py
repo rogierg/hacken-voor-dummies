@@ -319,7 +319,15 @@ base_css = '''
   .chat-container {
     display: flex;
     flex-direction: column;
-    height: 600px;
+    height: 70vh;
+    max-height: 600px;
+  }
+
+  @media (max-height: 800px) {
+    .chat-container {
+      height: 80vh;
+      max-height: none;
+    }
   }
 
   .chat-header {
