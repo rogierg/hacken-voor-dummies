@@ -103,7 +103,7 @@ def stuur_bot_antwoord(verzender, ontvanger):
             time.sleep(tijd)
             antwoorden = bot_antwoorden.get(ontvanger, ["Bedankt voor je bericht!"])
             antwoord = random.choice(antwoorden)
-            antwoord = filter_verboden_woorden(antwoord)
+            antwoord = filter_bad_words(antwoord)
             berichten.append({'verzender': ontvanger, 'ontvanger': verzender, 'inhoud': antwoord})
 
         # Start thread voor delayed reply
@@ -704,13 +704,32 @@ base_css = '''
 </style>
 '''
 
-verboden_woorden = ["fuck", "poep", "schijt", "stom", "eikel", "klootzak", "stommerd"]
+blocked_words = ["fuck", "eikel", "klootzak", "kut", "kanker", "lul", "hoer", "mongool", "tyfus", "godverdomme", "kutwijf", "slet", "tering", "kolere", "debiel"]
 
-def filter_verboden_woorden(tekst):
-    def vervang(match):
+# Milde woorden die vervangen worden door positieve woorden
+mild_word_replacements = {
+    "stom": "lief",
+    "stommerd": "schatje",
+    "poep": "bloemetje",
+    "schijt": "zonnetje",
+    "idioot": "knuffel",
+    "dom": "slim",
+    "sukkel": "held"
+}
+
+def filter_bad_words(text):
+    # Eerst de erge woorden vervangen met asterisks
+    def replace_serious(match):
         return '*' * len(match.group())
-    patroon = re.compile('|'.join(re.escape(w) for w in verboden_woorden), re.IGNORECASE)
-    return patroon.sub(vervang, tekst)
+    pattern_serious = re.compile('|'.join(re.escape(w) for w in blocked_words), re.IGNORECASE)
+    text = pattern_serious.sub(replace_serious, text)
+
+    # Daarna de milde woorden vervangen met grappige positieve woorden
+    for mild_word, positive_word in mild_word_replacements.items():
+        pattern_mild = re.compile(r'\b' + re.escape(mild_word) + r'\b', re.IGNORECASE)
+        text = pattern_mild.sub(positive_word, text)
+
+    return text
 
 login_html = base_css + '''
 <div class="language-switcher">
@@ -1176,7 +1195,7 @@ def registreer_post():
     if naam in gebruikers:
         return render_template_string(registreer_html, error="Gebruikersnaam al in gebruik.")
 
-    if any(re.search(r'\b' + re.escape(w) + r'\b', naam, re.IGNORECASE) for w in verboden_woorden):
+    if any(re.search(r'\b' + re.escape(w) + r'\b', naam, re.IGNORECASE) for w in blocked_words):
         return render_template_string(registreer_html, error="Deze gebruikersnaam is niet toegestaan vanwege ongepaste woorden.")
 
     # Store password in plaintext with default emoji from standaard emojis
@@ -1287,7 +1306,7 @@ def nieuw_bericht():
         if verzender not in gebruikers or ontvanger not in gebruikers:
             return "Ongeldige verzender of ontvanger."
 
-        inhoud = filter_verboden_woorden(inhoud)
+        inhoud = filter_bad_words(inhoud)
         berichten.append({'verzender': verzender, 'ontvanger': ontvanger, 'inhoud': inhoud})
 
         # Stuur automatisch antwoord als ontvanger een bot is
@@ -1440,6 +1459,31 @@ admin_dashboard_html = base_css + '''
     </div>
   </div>
 
+  {% if success_message %}
+  <div style="background: #dcf8c6; color: #128C7E; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border-left: 4px solid #25D366;">
+    ✅ {{ success_message }}
+  </div>
+  {% endif %}
+
+  <div class="section">
+    <div class="section-title">🎁 Admin Loot</div>
+    <p style="margin-bottom: 1rem; color: #666;">Geef jezelf alle premium emoji's!</p>
+    <form action="/admin/unlock_all" method="post" style="margin-bottom: 2rem;">
+      <div class="form-group">
+        <label>👤 Kies je account</label>
+        <select name="gebruiker" required>
+          <option value="">Selecteer gebruiker...</option>
+          {% for g in gebruikers_stats %}
+            {% if not g.is_bot %}
+            <option value="{{ g.naam }}">{{ g.emoji }} {{ g.naam }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <input type="submit" value="🎁 Unlock alle premium emoji's" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);">
+    </form>
+  </div>
+
   <div class="section">
     <div class="section-title">Gebruikersbeheer</div>
     <p style="margin-bottom: 1rem; color: #666;">Alle geregistreerde gebruikers en hun statistieken</p>
@@ -1453,7 +1497,6 @@ admin_dashboard_html = base_css + '''
           <th>🎁 Premium</th>
           <th>📥 Ontvangen</th>
           <th>📤 Verzonden</th>
-          <th>⚙️ Acties</th>
         </tr>
       </thead>
       <tbody>
@@ -1468,13 +1511,13 @@ admin_dashboard_html = base_css + '''
           <td><span style="font-size: 1.2rem;">{{ ' '.join(g.unlocked_emojis) if g.unlocked_emojis else '-' }}</span></td>
           <td>{{ g.ontvangen }}</td>
           <td>{{ g.verzonden }}</td>
-          <td>
-            <a href="/admin/verwijder?naam={{ g.naam }}" onclick="return confirm('Weet je het zeker?')">🗑️ Verwijder</a>
-          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    <p style="margin-top: 1rem; color: #999; font-size: 0.9rem; font-style: italic;">
+      💡 Tip: Gebruikers verwijderen is uitgeschakeld - dit is een leer-omgeving waar iedereen moet kunnen experimenteren!
+    </p>
   </div>
 </div>
 
@@ -1502,6 +1545,7 @@ admin_dashboard_html = base_css + '''
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
+    success_message = request.args.get('success')
     if request.method == 'POST':
         # VULNERABILITY: Hardcoded admin password check
         admin_password = request.form.get('admin_password', '')
@@ -1520,23 +1564,27 @@ def admin():
                     'verzonden': verzonden_aantal,
                     'wachtwoord': gebruikers[user]['password']  # VULNERABILITY: Passwords visible!
                 })
-            return render_template_string(admin_dashboard_html, gebruikers_stats=gebruikers_stats)
+            return render_template_string(admin_dashboard_html, gebruikers_stats=gebruikers_stats, success_message=success_message)
         else:
             return render_template_string(admin_login_html, error="Verkeerd admin wachtwoord!")
     else:
         # Toon login formulier
         return render_template_string(admin_login_html)
 
-@app.route('/admin/verwijder')
-def admin_verwijder():
-    # VULNERABILITY: IDOR - No authentication check at all!
-    naam = request.args.get('naam')
-    if naam in gebruikers:
-        del gebruikers[naam]
-        global berichten
-        berichten = [b for b in berichten if b['verzender'] != naam and b['ontvanger'] != naam]
-    # Redirect terug naar admin login (niet dashboard want geen auth check)
-    return redirect(url_for('admin'))
+@app.route('/admin/unlock_all', methods=['POST'])
+def admin_unlock_all():
+    # VULNERABILITY: No authentication check! Anyone can unlock all premium emojis
+    gebruiker = request.form.get('gebruiker', '')
+
+    if gebruiker not in gebruikers:
+        return redirect(url_for('admin'))
+
+    # Unlock alle premium emoji's
+    all_premium = list(premium_emojis.keys())
+    gebruikers[gebruiker]['unlocked_emojis'] = all_premium
+
+    success_msg = f'Alle {len(all_premium)} premium emoji\'s unlocked voor {gebruiker}!'
+    return redirect(url_for('admin') + f'?success={urllib.parse.quote(success_msg)}')
 
 # Initialiseer bots bij het starten (ook voor Azure)
 initialiseer_bots()

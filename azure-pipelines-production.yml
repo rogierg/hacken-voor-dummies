@@ -16,6 +16,7 @@ variables:
   environmentName: 'prod'
   skuName: 'B1'
   skuTier: 'Basic'
+  webAppName: 'hacken-voor-dummies'
 
 stages:
 - stage: Infrastructure
@@ -32,7 +33,7 @@ stages:
         scriptLocation: 'inlineScript'
         inlineScript: |
           # Build parameters for B1 production
-          params="environmentName=$(environmentName) skuName=$(skuName) skuTier=$(skuTier)"
+          params="environmentName=$(environmentName) skuName=$(skuName) skuTier=$(skuTier) webAppName=$(webAppName)"
 
           # Add optional IP allowlist if set
           if [ -n "$(allowedIps)" ]; then
